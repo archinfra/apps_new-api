@@ -1,0 +1,8 @@
+{
+  "package": "new-api-kubernetes",
+  "items": [
+    "new-api:<version>-<arch>",
+    "redis:7.4-alpine",
+    "postgres:15-bookworm"
+  ]
+}

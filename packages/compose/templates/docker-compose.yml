@@ -1,0 +1,57 @@
+services:
+  new-api:
+    image: __NEW_API_IMAGE__
+    container_name: new-api
+    restart: always
+    command: --log-dir /app/logs
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    environment:
+      SQL_DSN: postgresql://root:${POSTGRES_PASSWORD:-new-api-change-me}@postgres:5432/new-api
+      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:-new-api-change-me}@redis:6379
+      TZ: ${TZ:-Asia/Shanghai}
+      ERROR_LOG_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+      NODE_NAME: new-api-compose-1
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-please}
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - new-api-network
+
+  redis:
+    image: __REDIS_IMAGE__
+    container_name: new-api-redis
+    restart: always
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD:-new-api-change-me}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-new-api-change-me}
+    volumes:
+      - redis_data:/data
+    networks:
+      - new-api-network
+
+  postgres:
+    image: __POSTGRES_IMAGE__
+    container_name: new-api-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-new-api-change-me}
+      POSTGRES_DB: new-api
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - new-api-network
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  new-api-network:
+    driver: bridge
