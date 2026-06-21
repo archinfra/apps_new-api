@@ -1,0 +1,5 @@
+**/dist/
+**/.work/
+*.run
+*.sha256
+.DS_Store
