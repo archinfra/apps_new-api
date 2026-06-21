@@ -8,10 +8,7 @@ on:
         required: true
         default: all
         type: choice
-        options:
-          - all
-          - compose
-          - k8s
+        options: [all, compose, k8s]
       source_repo:
         description: Upstream new-api git repository
         required: true
@@ -21,17 +18,14 @@ on:
         required: true
         default: main
       image_version:
-        description: Optional image/package version. Empty means source_ref + UTC timestamp.
+        description: Optional image/package version
         required: false
         default: ""
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
@@ -75,14 +69,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Login source registry
-        if: steps.filter.outputs.enabled == 'true' && vars.SOURCE_REGISTRY != ''
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.SOURCE_REGISTRY }}
-          username: ${{ secrets.SOURCE_REGISTRY_USERNAME }}
-          password: ${{ secrets.SOURCE_REGISTRY_PASSWORD }}
-
       - name: Build offline package
         if: steps.filter.outputs.enabled == 'true'
         shell: bash
@@ -92,9 +78,11 @@ jobs:
           IMAGE_VERSION: ${{ github.event.inputs.image_version || '' }}
         run: |
           cd "packages/${{ matrix.package }}"
-          bash -n build.sh install.sh
+          build_script="build.sh"
+          if [[ -f build-fixed.sh ]]; then build_script="build-fixed.sh"; fi
+          bash -n "$build_script" install.sh
           jq empty images/image.json
-          bash build.sh --arch "${{ matrix.arch }}"
+          bash "$build_script" --arch "${{ matrix.arch }}"
 
       - name: Upload artifact
         if: steps.filter.outputs.enabled == 'true'
