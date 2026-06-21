@@ -63,7 +63,7 @@ jobs:
         if: steps.filter.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Install tools
+      - name: Install build tools
         if: steps.filter.outputs.enabled == 'true'
         run: |
           sudo apt-get update
@@ -80,8 +80,16 @@ jobs:
           cd "packages/${{ matrix.package }}"
           build_script="build.sh"
           if [[ -f build-fixed.sh ]]; then build_script="build-fixed.sh"; fi
+
           bash -n "$build_script" install.sh
           jq empty images/image.json
+
+          echo "Checking install.sh does not require non-baseline deployment tools"
+          if grep -En '(^|[^A-Za-z0-9_])(jq|yq|python3|python|node|npm|npx)([^A-Za-z0-9_]|$)' install.sh; then
+            echo "::error::install.sh must not depend on jq/yq/python/node/npm/npx. These are allowed in CI/build only, not in deployment environments."
+            exit 1
+          fi
+
           bash "$build_script" --arch "${{ matrix.arch }}"
 
       - name: Upload artifact
