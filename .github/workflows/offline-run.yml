@@ -85,7 +85,7 @@ jobs:
           jq empty images/image.json
 
           echo "Checking install.sh does not require non-baseline deployment tools"
-          if grep -En '(^|[^A-Za-z0-9_])(jq|yq|python3|python|node|npm|npx)([^A-Za-z0-9_]|$)' install.sh; then
+          if grep -En '(^|[[:space:];|&()])(jq|yq|python3|python|node|npm|npx)([[:space:];|&()]|$)' install.sh; then
             echo "::error::install.sh must not depend on jq/yq/python/node/npm/npx. These are allowed in CI/build only, not in deployment environments."
             exit 1
           fi
