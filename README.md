@@ -31,9 +31,11 @@ new-api-k8s-installer-arm64.run
 
 推送 `v*` tag 时，会自动把 `.run` 与 `.sha256` 发布到 GitHub Release。
 
-## 本地构建
+## 构建侧依赖
 
-本地需要 Docker Buildx、Git、jq、tar、sha256sum：
+构建环境允许安装辅助工具。GitHub Actions 当前会安装 `jq`，用于校验 `images/image.json`。
+
+本地构建需要 Docker Buildx、Git、jq、tar、sha256sum：
 
 ```bash
 cd packages/compose
@@ -46,6 +48,19 @@ bash build.sh --arch amd64 --source-dir /path/to/new-api-main
 ```
 
 `--source-dir` 可以直接指向上游源码目录；不传时会从 `SOURCE_REPO` 克隆。
+
+## 现场部署侧依赖
+
+现场部署环境不要求 `jq`、`yq`、`python`、`node`、`npm`、`npx` 等额外工具。
+
+`.run install/status/uninstall/print-images` 只依赖基础 shell 工具和对应部署运行时：
+
+- Compose 包：`bash`、`tar`、`sed`、`date`、`docker`，以及 `docker compose` 或 `docker-compose`。
+- Kubernetes 包：`bash`、`tar`、`sed`、`date`、`docker`、`kubectl`。
+
+镜像映射不在现场解析 JSON，而是读取构建阶段生成的 `images/image-index.tsv`。
+
+CI 已增加保护：如果 `install.sh` 引入 `jq/yq/python/node/npm/npx`，构建会直接失败。
 
 ## Compose 现场安装
 
