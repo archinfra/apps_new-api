@@ -1,0 +1,122 @@
+name: Build New-API Offline Run Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - compose
+          - k8s
+      source_repo:
+        description: Upstream new-api git repository
+        required: true
+        default: https://github.com/QuantumNous/new-api.git
+      source_ref:
+        description: Upstream branch, tag, or commit
+        required: true
+        default: main
+      image_version:
+        description: Optional image/package version. Empty means source_ref + UTC timestamp.
+        required: false
+        default: ""
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build-${{ matrix.package }}-${{ matrix.arch }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [compose, k8s]
+        arch: [amd64, arm64]
+    steps:
+      - name: Filter package
+        id: filter
+        shell: bash
+        run: |
+          requested="${{ github.event.inputs.package || 'all' }}"
+          if [[ "$requested" == "all" || "$requested" == "${{ matrix.package }}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout packaging repo
+        if: steps.filter.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: steps.filter.outputs.enabled == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.filter.outputs.enabled == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install tools
+        if: steps.filter.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Login source registry
+        if: steps.filter.outputs.enabled == 'true' && vars.SOURCE_REGISTRY != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.SOURCE_REGISTRY }}
+          username: ${{ secrets.SOURCE_REGISTRY_USERNAME }}
+          password: ${{ secrets.SOURCE_REGISTRY_PASSWORD }}
+
+      - name: Build offline package
+        if: steps.filter.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SOURCE_REPO: ${{ github.event.inputs.source_repo || 'https://github.com/QuantumNous/new-api.git' }}
+          SOURCE_REF: ${{ github.event.inputs.source_ref || 'main' }}
+          IMAGE_VERSION: ${{ github.event.inputs.image_version || '' }}
+        run: |
+          cd "packages/${{ matrix.package }}"
+          bash -n build.sh install.sh
+          jq empty images/image.json
+          bash build.sh --arch "${{ matrix.arch }}"
+
+      - name: Upload artifact
+        if: steps.filter.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-api-${{ matrix.package }}-offline-run-${{ matrix.arch }}
+          path: |
+            packages/${{ matrix.package }}/dist/*.run
+            packages/${{ matrix.package }}/dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
