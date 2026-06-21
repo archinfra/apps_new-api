@@ -1,0 +1,8 @@
+{
+  "package": "new-api-compose",
+  "images": [
+    { "name": "new-api", "target_ref_pattern": "new-api:<version>-<arch>" },
+    { "name": "redis", "target_ref": "redis:7.4-alpine" },
+    { "name": "postgres", "target_ref": "postgres:15-bookworm" }
+  ]
+}
