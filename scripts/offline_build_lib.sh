@@ -87,12 +87,12 @@ build_and_save_images() {
   docker pull --platform "linux/$ARCH" "$REDIS_LOCAL_REF"
   docker pull --platform "linux/$ARCH" "$POSTGRES_LOCAL_REF"
 
-  cat > "$payload_dir/images/image-index.tsv" <<EOF_INDEX
-component\tlocal_ref\ttarget_ref
-new-api\t${APP_LOCAL_REF}\tnew-api:${IMAGE_VERSION}-${ARCH}
-redis\t${REDIS_LOCAL_REF}\tredis:7.4-alpine
-postgres\t${POSTGRES_LOCAL_REF}\tpostgres:15-bookworm
-EOF_INDEX
+  {
+    printf 'component\tlocal_ref\ttarget_ref\n'
+    printf 'new-api\t%s\t%s\n' "$APP_LOCAL_REF" "new-api:${IMAGE_VERSION}-${ARCH}"
+    printf 'redis\t%s\t%s\n' "$REDIS_LOCAL_REF" "redis:7.4-alpine"
+    printf 'postgres\t%s\t%s\n' "$POSTGRES_LOCAL_REF" "postgres:15-bookworm"
+  } > "$payload_dir/images/image-index.tsv"
 
   log "saving images to payload/images/images.tar"
   docker save -o "$payload_dir/images/images.tar" "$APP_LOCAL_REF" "$REDIS_LOCAL_REF" "$POSTGRES_LOCAL_REF"
@@ -109,7 +109,7 @@ EOF_INFO
 copy_payload_files() {
   local package_dir="$1"
   local payload_dir="$2"
-  mkdir -p "$payload_dir"
+  mkdir -p "$payload_dir/images"
   cp "$package_dir/install.sh" "$payload_dir/install.sh"
   chmod +x "$payload_dir/install.sh"
   if [[ -d "$package_dir/templates" ]]; then cp -a "$package_dir/templates" "$payload_dir/"; fi
