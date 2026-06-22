@@ -16,6 +16,12 @@ REDIS_PASSWORD="${REDIS_PASSWORD:-new-api-change-me}"
 SESSION_SECRET="${SESSION_SECRET:-change-me-please}"
 TZ_VALUE="${TZ:-Asia/Shanghai}"
 POSTGRES_STORAGE_SIZE="${POSTGRES_STORAGE_SIZE:-10Gi}"
+NEW_API_LOCAL=""
+NEW_API_TARGET=""
+REDIS_LOCAL=""
+REDIS_TARGET=""
+POSTGRES_LOCAL=""
+POSTGRES_TARGET=""
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
@@ -71,18 +77,48 @@ parse_args() {
 confirm() { [[ "$YES" == true ]] && return 0; read -r -p "$1 [y/N] " ans; [[ "$ans" == y || "$ans" == Y ]]; }
 script_dir() { cd "$(dirname "${BASH_SOURCE[0]}")" && pwd; }
 trim_slash() { printf '%s' "$1" | sed 's#/*$##'; }
-target_for() { if [[ -n "$REGISTRY" ]]; then printf '%s/%s' "$(trim_slash "$REGISTRY")" "$1"; else printf '%s' "$2"; fi; }
+trim_ws() { printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+target_for() {
+  local target_ref="$1"
+  local local_ref="$2"
+  [[ -n "$target_ref" ]] || target_ref="$local_ref"
+  if [[ -n "$REGISTRY" ]]; then printf '%s/%s' "$(trim_slash "$REGISTRY")" "$target_ref"; else printf '%s' "$local_ref"; fi
+}
+validate_image_map() {
+  local f="$1"
+  local missing=""
+  [[ -n "$NEW_API_LOCAL" && -n "$NEW_API_TARGET" ]] || missing="${missing} new-api"
+  [[ -n "$REDIS_LOCAL" && -n "$REDIS_TARGET" ]] || missing="${missing} redis"
+  [[ -n "$POSTGRES_LOCAL" && -n "$POSTGRES_TARGET" ]] || missing="${missing} postgres"
+  if [[ -n "$missing" ]]; then
+    printf '[ERROR] invalid image index: %s\n' "$f" >&2
+    printf '[ERROR] missing component(s):%s\n' "$missing" >&2
+    printf '[ERROR] first lines of image-index.tsv:\n' >&2
+    sed -n '1,20p' "$f" >&2 || true
+    exit 1
+  fi
+}
 load_image_map() {
   local f="$(script_dir)/images/image-index.tsv"
+  local line component local_ref target_ref _extra
+  NEW_API_LOCAL=""; NEW_API_TARGET=""; REDIS_LOCAL=""; REDIS_TARGET=""; POSTGRES_LOCAL=""; POSTGRES_TARGET=""
   [[ -f "$f" ]] || die "missing image index: $f"
-  while IFS=$'\t' read -r component local_ref target_ref; do
-    [[ "$component" == component || -z "$component" ]] && continue
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$(trim_ws "$line")" ]] && continue
+    [[ "$(trim_ws "$line")" == \#* ]] && continue
+    line="${line//\\t/$'\t'}"
+    IFS=$'\t' read -r component local_ref target_ref _extra <<< "$line"
+    component="$(trim_ws "${component:-}")"
+    local_ref="$(trim_ws "${local_ref:-}")"
+    target_ref="$(trim_ws "${target_ref:-}")"
+    [[ "$component" == "component" ]] && continue
     case "$component" in
       new-api) NEW_API_LOCAL="$local_ref"; NEW_API_TARGET="$(target_for "$target_ref" "$local_ref")" ;;
       redis) REDIS_LOCAL="$local_ref"; REDIS_TARGET="$(target_for "$target_ref" "$local_ref")" ;;
       postgres) POSTGRES_LOCAL="$local_ref"; POSTGRES_TARGET="$(target_for "$target_ref" "$local_ref")" ;;
     esac
   done < "$f"
+  validate_image_map "$f"
 }
 prepare_images() {
   [[ "$SKIP_IMAGE_PREPARE" == true ]] && { log "skip image prepare"; return; }
@@ -128,6 +164,8 @@ do_install() {
   need_cmd kubectl; load_image_map
   echo "Namespace: $NAMESPACE"
   echo "New-API image: $NEW_API_TARGET"
+  echo "Redis image: $REDIS_TARGET"
+  echo "Postgres image: $POSTGRES_TARGET"
   confirm "Continue?" || die "cancelled"
   prepare_images
   manifest="$(render_manifest)"
@@ -135,7 +173,7 @@ do_install() {
   log "done. kubectl get pods,svc,deploy,statefulset,pvc -n $NAMESPACE"
 }
 do_status() { need_cmd kubectl; load_image_map; printf 'new-api=%s\nredis=%s\npostgres=%s\n' "$NEW_API_TARGET" "$REDIS_TARGET" "$POSTGRES_TARGET"; kubectl get pods,svc,deploy,statefulset,pvc -n "$NAMESPACE" || true; }
-do_uninstall() { need_cmd kubectl; manifest="$(render_manifest)"; confirm "Delete New-API Kubernetes resources?" || die "cancelled"; if [[ "$DANGER_DELETE_DATA" == true ]]; then kubectl delete -f "$manifest" --ignore-not-found=true; else kubectl delete deploy/new-api deploy/new-api-redis svc/new-api svc/new-api-redis svc/new-api-postgres secret/new-api-secret statefulset/new-api-postgres -n "$NAMESPACE" --ignore-not-found=true; fi; }
+do_uninstall() { need_cmd kubectl; load_image_map; manifest="$(render_manifest)"; confirm "Delete New-API Kubernetes resources?" || die "cancelled"; if [[ "$DANGER_DELETE_DATA" == true ]]; then kubectl delete -f "$manifest" --ignore-not-found=true; else kubectl delete deploy/new-api deploy/new-api-redis svc/new-api svc/new-api-redis svc/new-api-postgres secret/new-api-secret statefulset/new-api-postgres -n "$NAMESPACE" --ignore-not-found=true; fi; }
 
 parse_args "$@"
 case "$ACTION" in
